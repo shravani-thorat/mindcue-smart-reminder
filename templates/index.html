@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MindCue — Smart Reminder Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+<style>
+
+/* DESIGN TOKENS*/
+
+:root {
+  --bg:        #070d0d;
+  --surface:   #0d1117;
+  --card:      #111820;
+  --border:    #1c2535;
+  --border-hi: #2a3a50;
+  --accent:    #00d4ff;
+  --accent2:   #7c4dff;
+  --accent3:   #ff6b9d;
+  --success:   #00e5a0;
+  --warn:      #ff8c42;
+  --danger:    #ff4757;
+  --text:      #dde4ed;
+  --muted:     #4a5a70;
+  --muted2:    #2a3a50;
+  --r:         12px;
+  --r-sm:      8px;
+  --sidebar-w: 260px;
+  --font-h:    'Syne', sans-serif;
+  --font-m:    'DM Mono', monospace;
+}
+
+/* RESET*/
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-m);
+  font-size: 13.5px;
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Grain overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 9999;
+}
+
+/* LAYOUT */
+
+.shell { display: flex; min-height: 100vh; }
+
+/*SIDEBAR */
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 28px 18px;
+  position: sticky; top: 0; height: 100vh;
+  overflow-y: auto;
+  gap: 32px;
+}
+
+.brand { display: flex; align-items: center; gap: 11px; padding: 0 4px; }
+.brand-orb {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: grid; place-items: center;
+  font-size: 18px; flex-shrink: 0;
+  box-shadow: 0 0 20px rgba(0,212,255,.25);
+}
+.brand-name { font-family: var(--font-h); font-size: 19px; font-weight: 800; letter-spacing: -.5px; line-height: 1; }
+.brand-tag  { font-size: 10px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+
+.nav-section { display: flex; flex-direction: column; gap: 2px; }
+.nav-label-group { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); padding: 0 10px; margin-bottom: 6px; }
+
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-m); font-size: 13px;
+  cursor: pointer; transition: all .18s; text-align: left; width: 100%;
+}
+.nav-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
+.nav-item.active {
+  background: rgba(0,212,255,.07);
+  border-color: rgba(0,212,255,.18);
+  color: var(--accent);
+}
+.nav-item .ni { font-size: 15px; width: 18px; text-align: center; }
+.nav-badge {
+  margin-left: auto;
+  background: rgba(255,71,87,.15);
+  color: var(--danger);
+  font-size: 10px; padding: 1px 6px; border-radius: 10px;
+  font-weight: 600;
+}
+.nav-badge.green { background: rgba(0,229,160,.12); color: var(--success); }
+
+/* Sidebar stats */
+.sidebar-stats {
+  margin-top: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+}
+.sidebar-stats h5 {
+  font-family: var(--font-h); font-size: 10px; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+}
+.ss-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+.ss-key { font-size: 11.5px; color: var(--muted); }
+.ss-val { font-size: 12px; font-weight: 500; }
+
+/* Notification bell animation */
+@keyframes bellRing {
+  0%,100% { transform: rotate(0); }
+  15%      { transform: rotate(15deg); }
+  30%      { transform: rotate(-12deg); }
+  45%      { transform: rotate(8deg); }
+  60%      { transform: rotate(-5deg); }
+}
+.bell-active { animation: bellRing .8s ease; }
+
+/*  MAIN CONTENT */
+.main {
+  flex: 1; min-width: 0;
+  padding: 36px 40px;
+  display: flex; flex-direction: column; gap: 0;
+}
+
+/* VIEWS */
+.view { display: none; flex-direction: column; gap: 28px; }
+.view.active { display: flex; }
+
+.view-header { display: flex; justify-content: space-between; align-items: flex-end; }
+.view-title {
+  font-family: var(--font-h); font-size: 34px; font-weight: 800;
+  letter-spacing: -1.5px; line-height: 1.05;
+}
+.view-title em {
+  font-style: normal;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; color: transparent;
+}
+.view-sub { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+
+/* CARDS */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 22px 24px;
+}
+.card-head {
+  font-family: var(--font-h); font-size: 11px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 18px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+
+/* FORMS */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.fg-full   { grid-column: 1/-1; }
+.field     { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 10.5px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+
+input, select, textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 9px 13px;
+  color: var(--text);
+  font-family: var(--font-m); font-size: 13px;
+  outline: none; transition: border-color .18s, box-shadow .18s;
+  width: 100%;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,212,255,.07);
+}
+textarea { resize: vertical; min-height: 68px; }
+select option { background: var(--card); }
+
+/* Priority picker */
+.p-row { display: flex; gap: 7px; align-items: center; }
+.p-dot {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer; display: grid; place-items: center;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  transition: all .15s; user-select: none;
+}
+.p-dot:hover { border-color: var(--border-hi); color: var(--text); }
+.p-dot[data-p="1"].on  { background: rgba(0,229,160,.12); border-color: var(--success);  color: var(--success); }
+.p-dot[data-p="2"].on  { background: rgba(0,212,255,.10); border-color: var(--accent);   color: var(--accent); }
+.p-dot[data-p="3"].on  { background: rgba(124,77,255,.12);border-color: var(--accent2);  color: var(--accent2); }
+.p-dot[data-p="4"].on  { background: rgba(255,140,66,.12);border-color: var(--warn);     color: var(--warn); }
+.p-dot[data-p="5"].on  { background: rgba(255,71,87,.12); border-color: var(--danger);   color: var(--danger); }
+.p-hint { font-size: 11px; color: var(--muted); margin-left: 6px; }
+
+/*  BUTTONS */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px; border-radius: var(--r-sm);
+  border: none; cursor: pointer;
+  font-family: var(--font-m); font-size: 13px; font-weight: 500;
+  transition: all .18s; white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: #000; }
+.btn-primary:hover { background: #33ddff; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,255,.2); }
+.btn-ghost   { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger  { background: transparent; border: 1px solid rgba(255,71,87,.25); color: var(--danger); }
+.btn-danger:hover { background: rgba(255,71,87,.08); }
+.btn-warn    { background: transparent; border: 1px solid rgba(255,140,66,.25); color: var(--warn); }
+.btn-warn:hover { background: rgba(255,140,66,.08); }
+.btn-sm { padding: 5px 11px; font-size: 12px; border-radius: 6px; }
+.btn-xs { padding: 3px 8px; font-size: 11px; border-radius: 5px; }
+
+/* TASK LIST */
+.task-list { display: flex; flex-direction: column; gap: 8px; }
+
+.task-row {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 18px;
+  position: relative; overflow: hidden;
+  transition: border-color .18s, transform .15s;
+}
+.task-row:hover { border-color: var(--border-hi); transform: translateX(2px); }
+
+/* priority accent stripe */
+.task-row::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  border-radius: 3px 0 0 3px;
+  background: var(--muted2); opacity: .5;
+  transition: opacity .2s;
+}
+.task-row:hover::before, .task-row.p4::before, .task-row.p5::before { opacity: 1; }
+.task-row.p2::before { background: var(--accent); }
+.task-row.p3::before { background: var(--accent2); }
+.task-row.p4::before { background: var(--warn); }
+.task-row.p5::before { background: var(--danger); }
+
+.task-check {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 11px;
+  transition: all .18s; color: transparent;
+}
+.task-check:hover { border-color: var(--success); color: var(--success); background: rgba(0,229,160,.08); }
+.task-check.done  { background: var(--success); border-color: var(--success); color: #000; }
+
+.task-info { flex: 1; min-width: 0; }
+.task-name {
+  font-family: var(--font-h); font-size: 14.5px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px;
+}
+.task-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  background: rgba(255,255,255,.04); color: var(--muted);
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.tag.t  { background: rgba(0,212,255,.09);  color: var(--accent); }
+.tag.f  { background: rgba(124,77,255,.09); color: var(--accent2); }
+.tag.p1 { background: rgba(0,229,160,.08);  color: var(--success); }
+.tag.p2 { background: rgba(0,212,255,.08);  color: var(--accent); }
+.tag.p3 { background: rgba(124,77,255,.08); color: var(--accent2); }
+.tag.p4 { background: rgba(255,140,66,.09); color: var(--warn); }
+.tag.p5 { background: rgba(255,71,87,.09);  color: var(--danger); }
+
+.task-actions { display: flex; gap: 5px; flex-shrink: 0; }
+
+/* Completing animation */
+@keyframes checkPop { 0%{transform:scale(1)} 50%{transform:scale(1.3)} 100%{transform:scale(1)} }
+.task-check.done { animation: checkPop .25s ease; }
+
+/* RECOMMENDATIONS */
+.rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px,1fr)); gap: 16px; }
+
+.rec-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 20px;
+  display: flex; flex-direction: column; gap: 14px;
+  position: relative; overflow: hidden;
+  transition: border-color .2s, transform .15s;
+}
+.rec-card:hover { border-color: var(--border-hi); transform: translateY(-2px); }
+.rec-card::after {
+  content: ''; position: absolute; top: 0; right: 0;
+  width: 90px; height: 90px;
+  background: radial-gradient(circle at top right, rgba(0,212,255,.06), transparent 70%);
+}
+
+.rec-name { font-family: var(--font-h); font-size: 15px; font-weight: 700; }
+
+.rec-reminder-box {
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(0,212,255,.06);
+  border: 1px solid rgba(0,212,255,.14);
+  border-radius: var(--r-sm); padding: 10px 14px;
+}
+.rec-reminder-left { font-size: 11px; color: var(--muted); }
+.rec-reminder-time { font-family: var(--font-h); font-size: 22px; font-weight: 800; color: var(--accent); }
+
+/* ML probability bar */
+.ml-header { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.ml-val { color: var(--text); font-weight: 500; }
+.bar-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 3px; transition: width .7s cubic-bezier(.4,0,.2,1); }
+.bar-high  { background: linear-gradient(90deg, var(--success), #00ff88); }
+.bar-med   { background: linear-gradient(90deg, var(--accent2), #a78bfa); }
+.bar-low   { background: linear-gradient(90deg, var(--warn), var(--danger)); }
+
+/* Feature grid (ML explainability) */
+.feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.feat-item {
+  display: flex; justify-content: space-between;
+  background: rgba(255,255,255,.02); border-radius: 5px;
+  padding: 5px 8px; font-size: 11px; color: var(--muted);
+}
+.feat-val { color: var(--text); font-weight: 500; }
+
+/* Insights */
+.insights { display: flex; flex-direction: column; gap: 5px; }
+.insight {
+  font-size: 12px; padding: 7px 10px; border-radius: 6px;
+  background: rgba(255,255,255,.02);
+  border-left: 2px solid var(--border);
+  line-height: 1.5; color: var(--muted);
+}
+.insight.warn  { border-left-color: var(--warn);    color: rgba(255,140,66,.85); }
+.insight.good  { border-left-color: var(--success); color: rgba(0,229,160,.85); }
+.insight.info  { border-left-color: var(--accent);  color: rgba(0,212,255,.80); }
+.insight.alert { border-left-color: var(--danger);  color: rgba(255,71,87,.85); }
+
+.rec-mini-stats { display: flex; gap: 14px; }
+.rms-item { font-size: 11px; color: var(--muted); }
+.rms-item span { color: var(--text); font-weight: 500; }
+
+/* Trend badge */
+.trend-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+}
+.trend-improving { background: rgba(0,229,160,.10); color: var(--success); }
+.trend-declining { background: rgba(255,71,87,.10);  color: var(--danger); }
+.trend-stable    { background: rgba(255,255,255,.05); color: var(--muted); }
+
+/* HISTORY VIEW */
+.history-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.filter-btn {
+  padding: 5px 13px; border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--muted);
+  font-family: var(--font-m); font-size: 12px;
+  cursor: pointer; transition: all .15s;
+}
+.filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,212,255,.06); }
+
+.history-table {
+  width: 100%; border-collapse: collapse;
+}
+.history-table th {
+  text-align: left; font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--muted);
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  font-weight: 400;
+}
+.history-table td {
+  padding: 11px 12px; font-size: 12.5px;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  vertical-align: middle;
+}
+.history-table tr:hover td { background: rgba(255,255,255,.015); }
+
+.dot-on  { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.dot-off { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+
+/* NOTIFICATION SIMULATION */
+.notif-bar {
+  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(135deg, rgba(0,212,255,.06), rgba(124,77,255,.06));
+  border: 1px solid rgba(0,212,255,.18);
+  border-radius: var(--r); padding: 14px 18px;
+}
+.notif-icon { font-size: 22px; flex-shrink: 0; }
+.notif-text { flex: 1; }
+.notif-text strong { font-family: var(--font-h); font-size: 14px; font-weight: 700; display: block; }
+.notif-text small  { font-size: 11.5px; color: var(--muted); }
+
+/* Simulated notification popup */
+#sim-popup {
+  position: fixed; bottom: 80px; right: 28px; z-index: 8000;
+  width: 300px;
+  background: var(--card); border: 1px solid var(--border-hi);
+  border-radius: var(--r); padding: 14px 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  transform: translateX(340px);
+  transition: transform .4s cubic-bezier(.34,1.56,.64,1);
+  pointer-events: none;
+}
+#sim-popup.show { transform: translateX(0); pointer-events: all; }
+.sp-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sp-orb { width: 20px; height: 20px; border-radius: 5px; background: linear-gradient(135deg,var(--accent),var(--accent2)); display:grid;place-items:center;font-size:11px; }
+.sp-app { font-size: 11px; color: var(--muted); font-weight: 500; }
+.sp-time-ago { margin-left: auto; font-size: 10px; color: var(--muted); }
+.sp-title { font-family: var(--font-h); font-size: 13.5px; font-weight: 700; margin-bottom: 2px; }
+.sp-body  { font-size: 11.5px; color: var(--muted); }
+
+/*  TOAST */
+#toasts {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  z-index: 10000; display: flex; flex-direction: column; gap: 8px; align-items: center;
+}
+.toast {
+  padding: 10px 20px; border-radius: 20px;
+  font-size: 13px; font-family: var(--font-m);
+  background: var(--card); border: 1px solid var(--border-hi);
+  box-shadow: 0 4px 20px rgba(0,0,0,.3);
+  animation: toastIn .3s ease;
+  display: flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+.toast.ok  { border-color: rgba(0,229,160,.3); color: var(--success); }
+.toast.err { border-color: rgba(255,71,87,.3);  color: var(--danger); }
+.toast.inf { border-color: rgba(0,212,255,.3);  color: var(--accent); }
+@keyframes toastIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+
+/* MODAL */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.65); backdrop-filter: blur(6px);
+  z-index: 5000; display: none; place-items: center;
+}
+.overlay.open { display: grid; }
+.modal {
+  background: var(--card); border: 1px solid var(--border-hi);
+  border-radius: 16px; padding: 28px; width: 480px; max-width: 92vw;
+  animation: modalPop .22s ease;
+}
+@keyframes modalPop { from{opacity:0;transform:scale(.96)} to{opacity:1;transform:scale(1)} }
+.modal-title { font-family: var(--font-h); font-size: 20px; font-weight: 700; margin-bottom: 22px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+
+/* EMPTY + LOADING */
+.empty { text-align: center; padding: 56px 20px; }
+.empty-ico { font-size: 44px; opacity: .35; margin-bottom: 12px; }
+.empty-title { font-family: var(--font-h); font-size: 16px; font-weight: 700; margin-bottom: 5px; }
+.empty-sub { color: var(--muted); font-size: 13px; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinning { display: inline-block; animation: spin .9s linear infinite; }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* RESPONSIVE */
+@media(max-width: 800px) {
+  .shell { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; flex-direction: row; flex-wrap: wrap; padding: 14px; gap: 10px; }
+  .brand { margin-right: auto; }
+  .sidebar-stats { display: none; }
+  .main { padding: 20px 16px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .rec-grid { grid-template-columns: 1fr; }
+  .view-title { font-size: 26px; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-orb" id="brand-bell">🧠</div>
+    <div>
+      <div class="brand-name">MindCue</div>
+      <div class="brand-tag">Smart Reminders</div>
+    </div>
+  </div>
+
+  <nav class="nav-section">
+    <div class="nav-label-group">Workspace</div>
+    <button class="nav-item active" id="n-tasks"   onclick="go('tasks')">
+      <span class="ni">📋</span> All Tasks
+      <span class="nav-badge green" id="nb-tasks">0</span>
+    </button>
+    <button class="nav-item" id="n-add"    onclick="go('add')">
+      <span class="ni">✚</span> Add Task
+    </button>
+    <button class="nav-item" id="n-recs"   onclick="go('recs')">
+      <span class="ni">✨</span> Smart Insights
+    </button>
+    <button class="nav-item" id="n-history" onclick="go('history')">
+      <span class="ni">📈</span> History
+    </button>
+  </nav>
+
+  <div class="sidebar-stats">
+    <h5>Quick Stats</h5>
+    <div class="ss-row"><span class="ss-key">Active tasks</span>  <span class="ss-val" id="ss-total">—</span></div>
+    <div class="ss-row"><span class="ss-key">High priority</span> <span class="ss-val" style="color:var(--warn)" id="ss-high">—</span></div>
+    <div class="ss-row"><span class="ss-key">Overdue-risk</span>  <span class="ss-val" style="color:var(--danger)" id="ss-risk">—</span></div>
+    <div class="ss-row"><span class="ss-key">Last refresh</span>  <span class="ss-val" id="ss-time">—</span></div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- TASKS VIEW  -->
+  <div class="view active" id="v-tasks">
+    <div class="view-header">
+      <div>
+        <div class="view-title">Your <em>Reminders</em></div>
+        <div class="view-sub">Stay on top of every habit and deadline.</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="simulateNotif()">🔔 Simulate Notif</button>
+        <button class="btn btn-primary" onclick="go('add')">+ New Task</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">Active Tasks <span id="task-count" style="color:var(--muted)"></span></div>
+      <div class="task-list" id="task-list">
+        <div class="empty"><div class="empty-ico">📭</div><div class="empty-title">No tasks yet</div><div class="empty-sub">Add your first reminder to get started.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD TASK VIEW -->
+  <div class="view" id="v-add">
+    <div class="view-header">
+      <div>
+        <div class="view-title">New <em>Task</em></div>
+        <div class="view-sub">Create a reminder and let the engine learn from you.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">Task Details</div>
+      <div class="form-grid">
+        <div class="field fg-full">
+          <label>Task Title *</label>
+          <input type="text" id="f-title" placeholder="e.g. Morning Workout"/>
+        </div>
+        <div class="field">
+          <label>Scheduled Time *</label>
+          <input type="time" id="f-time"/>
+        </div>
+        <div class="field">
+          <label>Frequency</label>
+          <select id="f-freq">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="field fg-full">
+          <label>Description (optional)</label>
+          <textarea id="f-desc" placeholder="Any context or notes…"></textarea>
+        </div>
+        <div class="field fg-full">
+          <label>Priority Level</label>
+          <div class="p-row" id="add-p">
+            <div class="p-dot on" data-p="1" onclick="setPri('add',1)">1</div>
+            <div class="p-dot"   data-p="2" onclick="setPri('add',2)">2</div>
+            <div class="p-dot"   data-p="3" onclick="setPri('add',3)">3</div>
+            <div class="p-dot"   data-p="4" onclick="setPri('add',4)">4</div>
+            <div class="p-dot"   data-p="5" onclick="setPri('add',5)">5</div>
+            <span class="p-hint">← Low &nbsp; High →</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:22px">
+        <button class="btn btn-primary" onclick="addTask()">🚀 Add Task</button>
+        <button class="btn btn-ghost"   onclick="go('tasks')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!--  SMART INSIGHTS VIEW  -->
+  <div class="view" id="v-recs">
+    <div class="view-header">
+      <div>
+        <div class="view-title">Smart <em>Insights</em></div>
+        <div class="view-sub">ML-powered recommendations based on your behaviour.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadRecs()">↻ Refresh</button>
+    </div>
+
+    <div class="notif-bar">
+      <div class="notif-icon">🤖</div>
+      <div class="notif-text">
+        <strong>Logistic Regression Model Active</strong>
+        <small>Features: completion rate, recency, on-time rate, streak, miss streak — all computed from your history in real time.</small>
+      </div>
+    </div>
+
+    <div class="rec-grid" id="rec-grid">
+      <div class="empty"><div class="empty-ico spinning">⚙️</div><div class="empty-title">Analysing patterns…</div></div>
+    </div>
+  </div>
+
+  <!-- HISTORY VIEW -->
+  <div class="view" id="v-history">
+    <div class="view-header">
+      <div>
+        <div class="view-title">Completion <em>History</em></div>
+        <div class="view-sub">Every event logged by the engine.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        Filter by Task
+        <div class="history-filters" id="hist-filters">
+          <button class="filter-btn active" data-tid="all" onclick="filterHistory('all',this)">All</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Completed At</th>
+              <th>Hour</th>
+              <th>On Time</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="hist-body">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:40px">Loading history…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- EDIT MODAL-->
+<div class="overlay" id="edit-overlay">
+  <div class="modal">
+    <div class="modal-title">Edit Task</div>
+    <div class="form-grid">
+      <div class="field fg-full"><label>Title</label><input type="text" id="e-title"/></div>
+      <div class="field"><label>Scheduled Time</label><input type="time" id="e-time"/></div>
+      <div class="field"><label>Frequency</label>
+        <select id="e-freq">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="field fg-full"><label>Description</label><textarea id="e-desc"></textarea></div>
+      <div class="field fg-full">
+        <label>Priority</label>
+        <div class="p-row" id="edit-p">
+          <div class="p-dot" data-p="1" onclick="setPri('edit',1)">1</div>
+          <div class="p-dot" data-p="2" onclick="setPri('edit',2)">2</div>
+          <div class="p-dot" data-p="3" onclick="setPri('edit',3)">3</div>
+          <div class="p-dot" data-p="4" onclick="setPri('edit',4)">4</div>
+          <div class="p-dot" data-p="5" onclick="setPri('edit',5)">5</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost"   onclick="closeEdit()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- SIMULATED NOTIFICATION -->
+<div id="sim-popup">
+  <div class="sp-header">
+    <div class="sp-orb">🧠</div>
+    <div class="sp-app">MindCue</div>
+    <div class="sp-time-ago">now</div>
+  </div>
+  <div class="sp-title" id="sp-title">Task Reminder</div>
+  <div class="sp-body"  id="sp-body">Time to complete your task!</div>
+</div>
+
+<!-- TOASTS -->
+<div id="toasts"></div>
+
+<!-- JAVASCRIPT -->
+<script>
+/* State  */
+let tasks = [];
+let addPri = 1, editPri = 1, editId = null;
+let allHistory = [];
+
+/* Routing */
+function go(page) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('v-' + page).classList.add('active');
+  document.getElementById('n-' + page).classList.add('active');
+  if (page === 'tasks')   loadTasks();
+  if (page === 'recs')    loadRecs();
+  if (page === 'history') loadHistory();
+}
+
+/* API */
+async function api(method, path, body) {
+  const r = await fetch('/api' + path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return r.json();
+}
+
+/* Toast  */
+function toast(msg, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+/*  Tasks */
+async function loadTasks() {
+  const res = await api('GET', '/tasks');
+  if (!res.success) { toast('Failed to load tasks', 'err'); return; }
+  tasks = res.data || [];
+  renderTasks();
+  updateSidebar();
+}
+
+const PCLS = ['','p1','p2','p3','p4','p5'];
+
+function renderTasks() {
+  const el = document.getElementById('task-list');
+  document.getElementById('task-count').textContent = tasks.length ? `(${tasks.length})` : '';
+
+  if (!tasks.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-ico">📭</div>
+      <div class="empty-title">No active tasks</div>
+      <div class="empty-sub"><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="go('add')">+ Add First Task</button></div>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = tasks.map(t => {
+    const pc = PCLS[t.priority] || '';
+    const pdesc = t.description ? `<span class="tag">${esc(t.description.slice(0,28))}${t.description.length>28?'…':''}</span>` : '';
+    return `<div class="task-row ${pc}" id="tr-${t.id}">
+      <div class="task-check" onclick="completeTask(${t.id})" title="Mark complete">✓</div>
+      <div class="task-info">
+        <div class="task-name">${esc(t.title)}</div>
+        <div class="task-tags">
+          <span class="tag t">🕐 ${t.scheduled_time}</span>
+          <span class="tag f">${t.frequency}</span>
+          <span class="tag ${pc}">P${t.priority}</span>
+          ${pdesc}
+        </div>
+      </div>
+      <div class="task-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openEdit(${t.id})" title="Edit">✏️</button>
+        <button class="btn btn-warn  btn-sm" onclick="missTask(${t.id})" title="Mark missed">⚠</button>
+        <button class="btn btn-danger btn-sm" onclick="delTask(${t.id})" title="Delete">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateSidebar() {
+  document.getElementById('nb-tasks').textContent  = tasks.length;
+  document.getElementById('ss-total').textContent  = tasks.length;
+  document.getElementById('ss-high').textContent   = tasks.filter(t=>t.priority>=4).length;
+  document.getElementById('ss-risk').textContent   = tasks.filter(t=>t.priority>=4 && t.priority>=4).length;
+  document.getElementById('ss-time').textContent   = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+}
+
+async function completeTask(id) {
+  const chk = document.querySelector(`#tr-${id} .task-check`);
+  if (chk) { chk.classList.add('done'); chk.style.pointerEvents = 'none'; }
+  const res = await api('POST', `/tasks/${id}/complete`);
+  if (res.success) {
+    toast(`✅ Done! ${res.data.was_on_time ? '(On time 🎯)' : ''}`, 'ok');
+    setTimeout(() => { document.getElementById(`tr-${id}`)?.remove(); tasks = tasks.filter(t=>t.id!==id); updateSidebar(); if(!tasks.length) renderTasks(); }, 700);
+  } else {
+    if (chk) { chk.classList.remove('done'); chk.style.pointerEvents = ''; }
+    toast(res.error, 'err');
+  }
+}
+
+async function missTask(id) {
+  const res = await api('POST', `/tasks/${id}/missed`);
+  if (res.success) { toast('⚠ Missed logged — priority bumped', 'inf'); loadTasks(); }
+  else toast(res.error, 'err');
+}
+
+async function delTask(id) {
+  if (!confirm('Delete this task?')) return;
+  const res = await api('DELETE', `/tasks/${id}`);
+  if (res.success) { toast('Task deleted', 'inf'); tasks = tasks.filter(t=>t.id!==id); renderTasks(); updateSidebar(); }
+  else toast(res.error, 'err');
+}
+
+/*  Add Task  */
+function setPri(ctx, p) {
+  if (ctx === 'add') addPri = p;
+  else editPri = p;
+  document.querySelectorAll(`#${ctx}-p .p-dot`).forEach(d => d.classList.toggle('on', +d.dataset.p === p));
+}
+
+async function addTask() {
+  const title = document.getElementById('f-title').value.trim();
+  const time  = document.getElementById('f-time').value;
+  if (!title) { toast('Title is required', 'err'); return; }
+  if (!time)  { toast('Scheduled time is required', 'err'); return; }
+
+  const res = await api('POST', '/tasks', {
+    title, scheduled_time: time,
+    frequency: document.getElementById('f-freq').value,
+    description: document.getElementById('f-desc').value.trim() || null,
+    priority: addPri,
+  });
+
+  if (res.success) {
+    toast('Task created! 🎯', 'ok');
+    ['f-title','f-desc'].forEach(id => document.getElementById(id).value='');
+    document.getElementById('f-time').value = '';
+    setPri('add', 1);
+    go('tasks');
+  } else toast(res.error, 'err');
+}
+
+/*  Edit */
+function openEdit(id) {
+  const t = tasks.find(x=>x.id===id); if (!t) return;
+  editId = id; editPri = t.priority;
+  document.getElementById('e-title').value = t.title;
+  document.getElementById('e-time').value  = t.scheduled_time;
+  document.getElementById('e-freq').value  = t.frequency;
+  document.getElementById('e-desc').value  = t.description || '';
+  setPri('edit', t.priority);
+  document.getElementById('edit-overlay').classList.add('open');
+}
+function closeEdit() { document.getElementById('edit-overlay').classList.remove('open'); editId=null; }
+
+async function saveEdit() {
+  if (!editId) return;
+  const res = await api('PUT', `/tasks/${editId}`, {
+    title:          document.getElementById('e-title').value.trim(),
+    scheduled_time: document.getElementById('e-time').value,
+    frequency:      document.getElementById('e-freq').value,
+    description:    document.getElementById('e-desc').value.trim() || null,
+    priority:       editPri,
+  });
+  if (res.success) { toast('Updated ✏️', 'ok'); closeEdit(); loadTasks(); }
+  else toast(res.error, 'err');
+}
+
+/* Recommendations  */
+async function loadRecs() {
+  document.getElementById('rec-grid').innerHTML = `<div class="empty"><div class="empty-ico spinning">⚙️</div><div class="empty-title">Analysing…</div></div>`;
+  const res = await api('GET', '/recommendations');
+  if (!res.success) { toast('Failed to load recommendations','err'); return; }
+  renderRecs(res.data || []);
+}
+
+function renderRecs(recs) {
+  const el = document.getElementById('rec-grid');
+  if (!recs.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-ico">🤖</div><div class="empty-title">No tasks to analyse</div><div class="empty-sub">Add some tasks first.</div></div>`;
+    return;
+  }
+
+  el.innerHTML = recs.map(r => {
+    const pct = Math.round(r.ml_probability * 100);
+    const barCls = pct >= 70 ? 'bar-high' : pct >= 40 ? 'bar-med' : 'bar-low';
+    const trendCls = `trend-${r.trend}`;
+    const trendIcon = r.trend==='improving'?'↑':r.trend==='declining'?'↓':'→';
+
+    // Feature grid (ML explainability)
+    let featHtml = '';
+    if (r.ml_model === 'logistic_regression' && r.ml_features) {
+      const f = r.ml_features;
+      featHtml = `
+      <div style="margin-top:2px">
+        <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Model Features</div>
+        <div class="feature-grid">
+          <div class="feat-item">Completion rate <span class="feat-val">${(f.completion_rate*100).toFixed(0)}%</span></div>
+          <div class="feat-item">On-time rate <span class="feat-val">${(f.on_time_rate*100).toFixed(0)}%</span></div>
+          <div class="feat-item">Streak score <span class="feat-val">${(f.streak_score*100).toFixed(0)}%</span></div>
+          <div class="feat-item">Recency score <span class="feat-val">${(f.recency_score*100).toFixed(0)}%</span></div>
+        </div>
+      </div>`;
+    }
+
+    const insightsHtml = r.insights.map(ins => {
+      const cls = ins.startsWith('🚨')||ins.startsWith('⚠') ? 'warn'
+                : ins.startsWith('✅')||ins.startsWith('📈') ? 'good'
+                : ins.startsWith('🤖') ? 'info'
+                : ins.startsWith('📉') ? 'warn' : '';
+      return `<div class="insight ${cls}">${ins}</div>`;
+    }).join('');
+
+    return `<div class="rec-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div class="rec-name">${esc(r.task_title)}</div>
+        <span class="trend-badge ${trendCls}">${trendIcon} ${r.trend}</span>
+      </div>
+
+      <div class="rec-reminder-box">
+        <div>
+          <div class="rec-reminder-left">🔔 Suggested reminder</div>
+          <div class="rec-reminder-time">${r.suggested_reminder}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--muted)">Scheduled</div>
+          <div style="font-size:14px;font-family:var(--font-h);color:var(--muted)">${r.scheduled_time}</div>
+        </div>
+      </div>
+
+      <div class="ml-section">
+        <div class="ml-header">
+          <span>Completion Probability (${r.ml_model==='logistic_regression'?'LR model':'fallback'})</span>
+          <span class="ml-val">${pct}% — ${r.ml_label}</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill ${barCls}" style="width:${pct}%"></div></div>
+      </div>
+
+      ${featHtml}
+
+      <div class="rec-mini-stats">
+        <div class="rms-item">✅ <span>${r.completion_count}</span> done</div>
+        <div class="rms-item">❌ <span>${r.miss_count}</span> missed</div>
+        ${r.on_time_rate!==null ? `<div class="rms-item">⏱ <span>${Math.round(r.on_time_rate*100)}%</span> on time</div>` : ''}
+      </div>
+
+      ${insightsHtml ? `<div class="insights">${insightsHtml}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/*  History  */
+async function loadHistory() {
+  // Gather history for all tasks
+  const taskRes = await api('GET', '/tasks');
+  if (!taskRes.success) return;
+  const allTasks = taskRes.data || [];
+
+  // Build filter buttons
+  const filters = document.getElementById('hist-filters');
+  filters.innerHTML = `<button class="filter-btn active" data-tid="all" onclick="filterHistory('all',this)">All</button>`
+    + allTasks.map(t => `<button class="filter-btn" data-tid="${t.id}" onclick="filterHistory(${t.id},this)">${esc(t.title.slice(0,18))}</button>`).join('');
+
+  // Fetch history per task in parallel
+  const results = await Promise.all(allTasks.map(t => api('GET', `/tasks/${t.id}/history`)));
+  allHistory = [];
+  results.forEach((res, i) => {
+    if (res.success) {
+      res.data.forEach(h => allHistory.push({ ...h, task_title: allTasks[i].title }));
+    }
+  });
+  // Sort newest first
+  allHistory.sort((a,b) => b.completed_at.localeCompare(a.completed_at));
+  filterHistory('all', document.querySelector('.filter-btn'));
+}
+
+function filterHistory(tid, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const rows = tid === 'all' ? allHistory : allHistory.filter(h => h.task_id === tid);
+  const tbody = document.getElementById('hist-body');
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:40px">No history yet</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(h => `
+    <tr>
+      <td><strong style="font-family:var(--font-h)">${esc(h.task_title)}</strong></td>
+      <td style="color:var(--muted)">${fmtDate(h.completed_at)}</td>
+      <td>${h.completion_hour !== null ? h.completion_hour+':00' : '—'}</td>
+      <td>${h.was_on_time===1 ? '<span class="dot-on"></span> Yes' : h.was_on_time===0 ? '<span class="dot-off"></span> Late' : '—'}</td>
+      <td style="color:var(--muted)">${h.notes ? esc(h.notes) : '—'}</td>
+    </tr>`).join('');
+}
+
+/* Notification simulation  */
+async function simulateNotif() {
+  if (!tasks.length) { toast('No tasks to notify about', 'inf'); return; }
+  const t = tasks[Math.floor(Math.random() * tasks.length)];
+  const rec = await api('GET', `/recommendations/${t.id}`);
+  const reminder = rec.success ? rec.data.suggested_reminder : t.scheduled_time;
+
+  document.getElementById('sp-title').textContent = `⏰ ${t.title}`;
+  document.getElementById('sp-body').textContent  = `Reminder at ${reminder} — you usually complete this around this time.`;
+  document.getElementById('brand-bell').classList.add('bell-active');
+  setTimeout(() => document.getElementById('brand-bell').classList.remove('bell-active'), 900);
+
+  const popup = document.getElementById('sim-popup');
+  popup.classList.add('show');
+  setTimeout(() => popup.classList.remove('show'), 5000);
+}
+
+/*  Utilities */
+function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function fmtDate(s) {
+  if (!s) return '—';
+  try {
+    const d = new Date(s.replace(' ','T'));
+    return d.toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  } catch { return s; }
+}
+
+/* Init  */
+document.getElementById('edit-overlay').addEventListener('click', e => { if(e.target===e.currentTarget) closeEdit(); });
+loadTasks();
+</script>
+</body>
+</html>
